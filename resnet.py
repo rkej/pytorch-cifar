@@ -1,10 +1,13 @@
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
+
+
 def _weights_init(m):
     classname = m.__class__.__name__
     if isinstance(m, nn.Linear) or isinstance(m, nn.Conv2d):
         nn.init.kaiming_normal_(m.weight)
+
 
 class LambdaLayer(nn.Module):
     def __init__(self, lambd):
@@ -13,6 +16,34 @@ class LambdaLayer(nn.Module):
 
     def forward(self, x):
         return self.lambd(x)
+
+
+class Bottleneck(nn.Module):
+    expansion = 4
+
+    def __init__(self, in_planes, planes, stride=1):
+        super(Bottleneck, self).__init__()
+        self.conv1 = nn.Conv2d(in_planes, planes, kernel_size=1, bias=False)
+        self.bn1 = nn.BatchNorm2d(planes)
+        self.conv2 = nn.Conv2d(planes, planes, kernel_size=3, stride=stride, padding=1, bias=False)
+        self.bn2 = nn.BatchNorm2d(planes)
+        self.conv3 = nn.Conv2d(planes, self.expansion * planes, kernel_size=1, bias=False)
+        self.bn3 = nn.BatchNorm2d(self.expansion * planes)
+
+        self.shortcut = nn.Sequential()
+        if stride != 1 or in_planes != self.expansion * planes:
+            self.shortcut = nn.Sequential(
+                nn.Conv2d(in_planes, self.expansion * planes, kernel_size=1, stride=stride, bias=False),
+                nn.BatchNorm2d(self.expansion * planes)
+            )
+
+    def forward(self, x):
+        out = F.relu(self.bn1(self.conv1(x)))
+        out = F.relu(self.bn2(self.conv2(out)))
+        out = self.bn3(self.conv3(out))
+        out += self.shortcut(x)
+        out = F.relu(out)
+        return out
 
 
 class BasicBlock(nn.Module):
@@ -32,11 +63,12 @@ class BasicBlock(nn.Module):
                 For CIFAR10 ResNet paper uses option A.
                 """
                 self.shortcut = LambdaLayer(lambda x:
-                                            F.pad(x[:, :, ::2, ::2], (0, 0, 0, 0, planes//4, planes//4), "constant", 0))
+                                            F.pad(x[:, :, ::2, ::2], (0, 0, 0, 0, planes // 4, planes // 4), "constant",
+                                                  0))
             elif option == 'B':
                 self.shortcut = nn.Sequential(
-                     nn.Conv2d(in_planes, self.expansion * planes, kernel_size=1, stride=stride, bias=False),
-                     nn.BatchNorm2d(self.expansion * planes)
+                    nn.Conv2d(in_planes, self.expansion * planes, kernel_size=1, stride=stride, bias=False),
+                    nn.BatchNorm2d(self.expansion * planes)
                 )
 
     def forward(self, x):
@@ -62,7 +94,7 @@ class ResNet(nn.Module):
         self.apply(_weights_init)
 
     def _make_layer(self, block, planes, num_blocks, stride):
-        strides = [stride] + [1]*(num_blocks-1)
+        strides = [stride] + [1] * (num_blocks - 1)
         layers = []
         for stride in strides:
             layers.append(block(self.in_planes, planes, stride))
@@ -80,10 +112,14 @@ class ResNet(nn.Module):
         out = self.linear(out)
         return out
 
+
 net = ResNet(BasicBlock, [3, 3, 3])
+net50 = ResNet(BasicBlock, [3, 3, 3], num_classes=4)
 
 def ResNetUse():
     return net
+def ResNetKaokore():
+    return net50
 
 # if device == 'cuda':
 #     net = torch.nn.DataParallel(net)
